@@ -1,0 +1,1017 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Tank Level Control - Web HMI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow+Condensed:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#0a0e14;--panel:#111820;--border:#1e2d3d;--accent:#00d4ff;--green:#00ff88;--red:#ff3b3b;--amber:#ffaa00;--text:#e8f4ff;--muted:#a8c4d8;--mono:'Share Tech Mono',monospace;--ui:'Barlow Condensed',sans-serif}
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+
+  /* --- 1080p fit: body fills viewport height exactly when content fits; --- */
+  /* --- on shorter/narrower screens it grows and scrolls instead of clipping --- */
+  html,body{min-height:100%;height:auto;overflow-y:auto;overflow-x:hidden}
+  body{background:var(--bg);color:var(--text);font-family:var(--ui);min-height:100vh;display:flex;flex-direction:column;align-items:center}
+  body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.08) 2px,rgba(0,0,0,0.08) 4px);pointer-events:none;z-index:999}
+
+  /* HEADER — kept large but tightened vertical padding */
+  header{width:100%;max-width:1200px;display:flex;align-items:center;justify-content:space-between;padding:10px 24px 9px;border-bottom:1px solid var(--border);flex-shrink:0}
+  .logo{font-family:var(--mono);font-size:17px;letter-spacing:4px;color:var(--accent);text-transform:uppercase}
+  .sb{display:flex;gap:18px;align-items:center;font-family:var(--mono);font-size:14px;color:var(--muted)}
+  .dot{width:11px;height:11px;border-radius:50%;display:inline-block;margin-right:7px}
+  .dot.on{background:var(--green);animation:blink 2s infinite}
+  .dot.off{background:var(--red)}
+  .dot.try{background:var(--amber);animation:blink 0.8s infinite}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:0.3}}
+  @keyframes pulse-green{0%,100%{box-shadow:0 0 0 0 rgba(0,255,136,0.4)}50%{box-shadow:0 0 0 6px rgba(0,255,136,0)}}
+  @keyframes pulse-red{0%,100%{box-shadow:0 0 0 0 rgba(255,59,59,0.5)}50%{box-shadow:0 0 0 8px rgba(255,59,59,0)}}
+  @keyframes pulse-amber{0%,100%{box-shadow:0 0 0 0 rgba(255,170,0,0.4)}50%{box-shadow:0 0 0 6px rgba(255,170,0,0)}}
+  @keyframes pop{0%{transform:scale(1)}40%{transform:scale(1.08)}100%{transform:scale(1)}}
+
+  /* LAYOUT — takes all remaining height between header and footer */
+  .main{width:100%;max-width:1200px;padding:6px 8px;flex:1;min-height:0;display:grid;grid-template-columns:210px 1fr 300px;grid-template-rows:auto auto auto 1fr;gap:6px}
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:4px;padding:8px 10px;position:relative;overflow:hidden}
+  .panel::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--accent),transparent);opacity:0.35}
+
+  /* PANEL LABELS */
+  .plbl{font-family:var(--mono);font-size:14px;letter-spacing:1.5px;color:#a8c2d4;text-transform:uppercase;margin-bottom:5px;font-weight:400}
+
+  /* TANK PANEL */
+  .tank-panel{grid-column:1;grid-row:1/3;display:flex;flex-direction:column;align-items:center;gap:6px;padding:8px 10px}
+  .tw{position:relative;width:130px;height:270px}
+  .tb{position:absolute;inset:0;border:3px solid #2a4060;border-radius:5px 5px 10px 10px;overflow:hidden;background:#060c14}
+  .tf{position:absolute;bottom:0;left:0;right:0;background:linear-gradient(180deg,rgba(0,170,255,0.25),rgba(0,102,204,0.5));border-top:3px solid var(--accent);transition:height 0.8s cubic-bezier(0.4,0,0.2,1);height:0%}
+  .wv{position:absolute;top:-5px;left:-20%;width:140%;height:13px;opacity:0.6;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 10'%3E%3Cpath d='M0 5 Q25 0 50 5 Q75 10 100 5 Q125 0 150 5 Q175 10 200 5' fill='none' stroke='%2300d4ff' stroke-width='2'/%3E%3C/svg%3E") repeat-x;animation:wave 2s linear infinite}
+  @keyframes wave{to{background-position:200px 0}}
+  .tks{position:absolute;right:-38px;top:0;bottom:0;display:flex;flex-direction:column;justify-content:space-between}
+  .tk{font-family:var(--mono);font-size:13px;color:#a8c2d4;font-weight:600}
+  .sp-max-line{position:absolute;left:0;right:0;height:2px;background:var(--accent);opacity:0.9;pointer-events:none}
+  .sp-max-line::after{content:'MAX';position:absolute;left:5px;top:-12px;font-family:var(--mono);font-size:10px;color:var(--accent);font-weight:bold}
+  .sp-min-line{position:absolute;left:0;right:0;height:2px;background:var(--amber);opacity:0.9;pointer-events:none}
+  .sp-min-line::after{content:'MIN';position:absolute;left:5px;top:-12px;font-family:var(--mono);font-size:10px;color:var(--amber);font-weight:bold}
+  .hil{position:absolute;left:0;right:0;height:1px;background:var(--red);bottom:90%;pointer-events:none;opacity:0.7}
+  .lol{position:absolute;left:0;right:0;height:1px;background:var(--red);bottom:10%;pointer-events:none;opacity:0.7}
+  .tank-title{font-family:var(--mono);font-size:14px;letter-spacing:2px;color:#a8c2d4;text-transform:uppercase;font-weight:600;margin-bottom:4px}
+  .lvr{font-family:var(--mono);font-size:38px;color:var(--accent);text-align:center;line-height:1}
+  .lvu{font-size:13px;color:var(--muted);letter-spacing:2px;text-align:center}
+
+  /* STATUS GRID — compact boxes, big text inside */
+  .status-panel{grid-column:2;grid-row:1}
+  .sg{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}
+  .sc{background:#0d1a24;border:1px solid var(--border);border-radius:3px;padding:7px 5px;text-align:center;transition:border-color 0.3s}
+  .sl{font-size:17px;letter-spacing:0.5px;color:#c8dff0;text-transform:uppercase;margin-bottom:4px;font-weight:700}
+  .sv{font-family:var(--mono);font-size:26px;font-weight:700;letter-spacing:1px;transition:color 0.3s}
+  .sv.green{color:var(--green)}
+  .sv.red{color:var(--red)}
+  .sv.amber{color:var(--amber)}
+  .sv.cyan{color:var(--accent)}
+  .sv.dim{color:#5a7a90}
+  .sc.active-green{border-color:var(--green);animation:pulse-green 2s infinite}
+  .sc.active-red{border-color:var(--red);animation:pulse-red 1s infinite}
+  .sc.active-amber{border-color:var(--amber);animation:pulse-amber 1.5s infinite}
+  .sc.pop{animation:pop 0.3s ease-out}
+
+  /* CONTROL PANEL */
+  .ctrl-panel{grid-column:3;grid-row:1/3;display:flex;flex-direction:column;gap:6px}
+  .safety-panel{grid-column:2;grid-row:2}
+
+  /* TREND */
+  .trend-panel{grid-column:1/4;grid-row:3}
+  canvas{width:100%;height:95px;display:block}
+
+  /* EVENT LOG — 6 visible lines */
+  .log-panel{grid-column:1/4;grid-row:4;display:flex;flex-direction:column;min-height:0}
+  .log-header{display:flex;align-items:center;margin-bottom:3px}
+  .log-body{max-height:130px;overflow-y:auto}
+  body.mode-live .log-body{max-height:120px}
+  .le{font-family:var(--mono);font-size:12px;padding:2px 0;border-bottom:1px solid var(--border);display:flex;gap:10px;color:var(--text)}
+  .lt{color:var(--muted);min-width:75px}
+  .lm.ok{color:var(--green)}.lm.err{color:var(--red)}.lm.info{color:var(--accent)}.lm.warn{color:var(--amber)}
+
+  /* CONTROLS — bigger sliders, inputs, readable fonts */
+  .row{display:flex;align-items:center;gap:8px;margin-top:5px}
+  input[type=range]{flex:1;-webkit-appearance:none;height:10px;border-radius:5px;background:var(--border);outline:none;cursor:pointer}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:26px;height:26px;border-radius:50%;background:var(--accent);cursor:pointer;box-shadow:0 0 10px var(--accent);border:2px solid rgba(255,255,255,0.2)}
+  input[type=range].amber-thumb::-webkit-slider-thumb{background:var(--amber);box-shadow:0 0 10px var(--amber)}
+  input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;background:var(--accent);cursor:pointer;border:2px solid rgba(255,255,255,0.2);box-shadow:0 0 10px var(--accent)}
+  input[type=range].amber-thumb::-moz-range-thumb{background:var(--amber);box-shadow:0 0 10px var(--amber)}
+  input[type=number]{width:72px;padding:6px 4px;background:#0d1a24;border:1px solid var(--border);color:var(--accent);font-family:var(--mono);font-size:20px;border-radius:3px;text-align:center;outline:none;-moz-appearance:textfield}
+  input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none}
+  input[type=number]:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(0,212,255,0.2)}
+  .num-amber{color:var(--amber)!important}
+  .num-amber:focus{border-color:var(--amber)!important;box-shadow:0 0 0 2px rgba(255,170,0,0.2)!important}
+
+  /* BUTTONS */
+  .btn{width:100%;padding:10px;border:1px solid;border-radius:3px;font-family:var(--ui);font-size:17px;font-weight:700;letter-spacing:2px;text-transform:uppercase;cursor:pointer;transition:all 0.15s;background:transparent}
+  .bstart{border-color:var(--green);color:var(--green);font-size:17px;padding:11px}
+  .bstart:hover{background:rgba(0,255,136,0.1)}
+  .bstart.dim{border-color:#1a3a28;color:#1a3a28;pointer-events:none}
+  .bstop{border-color:var(--red);color:var(--red);font-size:17px;padding:11px}
+  .bstop:hover{background:rgba(255,59,59,0.1)}
+  .bstop.dim{border-color:#3a1a1a;color:#3a1a1a;pointer-events:none}
+  .be{border-color:var(--red);color:var(--red);font-size:18px;padding:12px}
+  .be:hover,.be.act{background:var(--red);color:#000;box-shadow:0 0 20px rgba(255,59,59,0.4)}
+  .br{border-color:var(--amber);color:var(--amber);font-size:17px;padding:11px}
+  .br:hover{background:rgba(255,170,0,0.1)}
+  .bw{border-color:var(--green);color:var(--green);margin-top:6px;font-size:15px;padding:9px}
+  .bw:hover{background:rgba(0,255,136,0.08)}
+  .bc{border-color:var(--accent);color:var(--accent);margin-top:4px;font-size:15px;padding:9px}
+  .bc:hover{background:rgba(0,212,255,0.08)}
+  .bs{border-color:var(--accent);color:var(--accent);font-size:15px}
+  .bs:hover{background:rgba(0,212,255,0.08)}
+  .mt{display:flex;border:1px solid var(--border);border-radius:3px;overflow:hidden;margin-bottom:6px}
+  .mb{flex:1;padding:9px;background:transparent;border:none;cursor:pointer;font-family:var(--mono);font-size:15px;letter-spacing:1px;color:var(--muted);transition:all 0.15s;font-weight:400}
+  .mb.act{background:var(--accent);color:#000;font-weight:600}
+
+  /* Sub-labels and band info */
+  .sub-lbl{font-family:var(--mono);font-size:14px;color:#c8dff0;margin-bottom:3px;margin-top:5px;font-weight:400}
+  .info-lbl{font-family:var(--mono);font-size:13px;color:#a8c2d4;font-weight:400}
+  #bandinfo{font-family:var(--mono);font-size:13px;color:#a8c2d4;margin-bottom:6px;line-height:1.6;background:#0a1520;border:1px solid var(--border);border-radius:3px;padding:6px 9px;font-weight:400}
+
+  /* Safety */
+  .sfrow{display:flex;gap:8px}
+  .sfrow .btn{flex:1}
+
+  /* proc info bar — significantly bigger, readable */
+  #procinfo{display:flex;gap:20px;padding:5px 4px 0;font-family:var(--mono);font-size:16px;color:#c8dff0;border-top:1px solid var(--border);margin-top:4px;flex-wrap:wrap;font-weight:600}
+
+  /* FOOTER */
+  .ft{width:100%;max-width:1200px;padding:7px 24px;display:flex;gap:18px;align-items:center;font-family:var(--mono);font-size:13px;color:var(--muted);border-top:1px solid var(--border);flex-shrink:0}
+  .dv{color:var(--border)}
+
+  #simlvlpanel,#demopanel{display:none}
+
+  @media(max-width:900px){
+    .main{grid-template-columns:1fr}
+    .tank-panel,.ctrl-panel,.status-panel,.safety-panel,.trend-panel,.log-panel{grid-column:auto;grid-row:auto}
+  }
+</style>
+</head>
+<body>
+
+<!-- Node.js backend proxy handles all PLC reads and writes via /api/poll and /api/write -->
+
+<header>
+  <div class="logo">TANK LEVEL CONTROL - WEB HMI</div>
+  <div class="sb">
+    <span id="connblock"><span class="dot try" id="cdot"></span><span id="ctxt">CONNECTING...</span></span>
+    <span class="dv" id="conndv">|</span>
+    <span id="clk">--:--:--</span>
+    <span class="dv">|</span>
+    <span id="hdrmode">LIVE PLC</span>
+    <span class="dv">|</span>
+    <span><span class="dot try" id="cpudot"></span><span id="cpumodel">S7-1500 | CPU --</span></span>
+  </div>
+</header>
+
+<div class="main">
+
+  <!-- COL 1 ROW 1-2: Tank -->
+  <div class="panel tank-panel">
+    <div class="tank-title">// Tank T001</div>
+    <div class="tw">
+      <div class="tb">
+        <div class="tf" id="tfill"><div class="wv"></div></div>
+        <div class="hil"></div>
+        <div class="lol"></div>
+        <div class="sp-max-line" id="spmaxline"></div>
+        <div class="sp-min-line" id="spminline"></div>
+      </div>
+      <div class="tks">
+        <span class="tk">100</span><span class="tk">75</span>
+        <span class="tk">50</span><span class="tk">25</span>
+        <span class="tk">0</span>
+      </div>
+    </div>
+    <div class="lvr"><span id="lvlval">0.0</span><div class="lvu">% LEVEL</div></div>
+  </div>
+
+  <!-- COL 2 ROW 1: Status -->
+  <div class="panel status-panel">
+    <div class="plbl">// Process Status</div>
+    <div class="sg">
+      <div class="sc" id="sc_pump">
+        <div class="sl">Pump P-01</div>
+        <div class="sv dim" id="ppump">STOPPED</div>
+      </div>
+      <div class="sc" id="sc_runtime">
+        <div class="sl">Runtime</div>
+        <div class="sv cyan" id="pruntime">--</div>
+      </div>
+      <div class="sc" id="sc_sim">
+        <div class="sl">Tank Level</div>
+        <div class="sv cyan" id="psim">-- %</div>
+      </div>
+      <div class="sc" id="sc_ah">
+        <div class="sl">Alarm High</div>
+        <div class="sv dim" id="pah">OK</div>
+      </div>
+      <div class="sc" id="sc_al">
+        <div class="sl">Alarm Low</div>
+        <div class="sv dim" id="pal">OK</div>
+      </div>
+      <div class="sc" id="sc_es">
+        <div class="sl">E-Stop</div>
+        <div class="sv dim" id="pes">CLEAR</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- COL 3 ROWS 1-2: Controls -->
+  <div class="ctrl-panel">
+
+    <div class="panel">
+      <div class="plbl">// Mode</div>
+      <div class="mt">
+        <button class="mb act" id="mlive" onclick="setMode('live')">LIVE PLC</button>
+        <button class="mb" id="msim" onclick="setMode('sim')">SIMULATE</button>
+      </div>
+      <div class="info-lbl" id="minfo">Reading from --</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:5px;padding-top:5px;border-top:1px solid var(--border)">
+        <span style="font-family:var(--mono);font-size:13px;color:var(--muted);font-weight:400">UPDATED <span id="pupd" style="color:var(--accent)">--:--:--</span></span>
+        <span style="font-family:var(--mono);font-size:13px;color:var(--muted);font-weight:400">READS <span id="readct2" style="color:#a8c2d4">0</span></span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="plbl">// Operating Band</div>
+      <div id="bandinfo">
+        START below <span id="bi_min" style="color:var(--amber)">--</span> % &nbsp;|&nbsp; STOP above <span id="bi_max" style="color:var(--accent)">--</span> % &nbsp;|&nbsp; GAP: <span id="bi_gap" style="color:#a8c2d4">--</span> %
+      </div>
+      <div class="sub-lbl">MIN (pump ON below)</div>
+      <div class="row">
+        <input type="range" class="amber-thumb" id="spminsl" min="5" max="85" value="30" oninput="lockSPMIN();document.getElementById('spminnum').value=this.value;syncBandInfo()"/>
+        <input type="number" id="spminnum" min="5" max="85" value="30" class="num-amber" oninput="lockSPMIN();document.getElementById('spminsl').value=this.value;syncBandInfo()"/>
+      </div>
+      <div class="sub-lbl" style="margin-top:6px">MAX (pump OFF above)</div>
+      <div class="row">
+        <input type="range" id="spmaxsl" min="15" max="95" value="70" oninput="lockSPMAX();document.getElementById('spmaxnum').value=this.value;syncBandInfo()"/>
+        <input type="number" id="spmaxnum" min="15" max="95" value="70" oninput="lockSPMAX();document.getElementById('spmaxsl').value=this.value;syncBandInfo()"/>
+      </div>
+      <button class="btn bw" onclick="writeBand()">Apply Limits</button>
+    </div>
+
+    <div class="panel" id="simlvlpanel">
+      <div class="plbl">// Level Transmitter LT-001</div>
+      <div class="row">
+        <input type="range" id="simsl" min="0" max="100" value="0" step="0.5" oninput="lockSIM();document.getElementById('simnum').value=parseFloat(this.value).toFixed(1)"/>
+        <input type="number" id="simnum" min="0" max="100" value="0" step="0.5" oninput="lockSIM();document.getElementById('simsl').value=this.value"/>
+      </div>
+      <button class="btn bw" onclick="writeSIM()">Apply Level</button>
+    </div>
+
+    <div class="panel" id="demopanel">
+      <div class="plbl">// LT-001 (SIM)</div>
+      <div class="row">
+        <input type="range" id="demosl" min="0" max="100" value="0" step="0.5" oninput="updateDemo(this.value)"/>
+        <input type="number" id="demonum" min="0" max="100" value="0" step="0.5" oninput="updateDemo(this.value)"/>
+      </div>
+      <button class="btn bs" id="autobtn" onclick="autoFill()">AUTO FILL DEMO</button>
+    </div>
+
+  </div>
+
+  <!-- COL 2 ROW 2: Safety -->
+  <div class="panel safety-panel">
+    <div class="plbl">// Safety &amp; Reset</div>
+    <div class="sfrow" style="margin-bottom:8px">
+      <button class="btn bstart" id="startbtn" onclick="writeStart()">▶ START</button>
+      <button class="btn bstop" id="stopbtn" onclick="writeStop()">■ STOP</button>
+    </div>
+    <div class="sfrow" style="margin-bottom:8px">
+      <button class="btn be" id="estopbtn" onclick="writeEstop()">EMERGENCY STOP</button>
+    </div>
+    <div class="sfrow">
+      <button class="btn br" id="silencebtn" onclick="writeAlarmReset()">SILENCE ALARM</button>
+      <button class="btn bc" onclick="writeRuntimeReset()">RESET RUNTIME</button>
+    </div>
+  </div>
+
+  <!-- ROW 3: Trend -->
+  <div class="panel trend-panel">
+    <div class="plbl">// Level Trend - 60 s</div>
+    <canvas id="trend"></canvas>
+    <div id="procinfo">
+      <span>PUMP START below | <span id="inf_spmin" style="color:var(--amber)">-- %</span></span>
+      <span style="color:var(--border)">|</span>
+      <span>PUMP STOP above | <span id="inf_spmax" style="color:var(--accent)">-- %</span></span>
+      <span style="color:var(--border)">|</span>
+      <span>LT-001 <span style="color:var(--muted);font-size:13px">(SIM) → AI IW64</span> | <span id="inf_sim" style="color:var(--accent)">-- %</span></span>
+      <span style="color:var(--border)">|</span>
+      <span>RUNTIME | <span id="inf_rt" style="color:var(--green)">--</span></span>
+    </div>
+  </div>
+
+  <!-- ROW 4: Log - fixed header, scrollable body -->
+  <div class="panel log-panel">
+    <div class="log-header">
+      <div class="plbl" style="margin-bottom:0">// Event Log</div>
+    </div>
+    <div class="log-body" id="logentries"></div>
+  </div>
+
+</div>
+
+<div class="ft">
+  <span style="color:var(--accent);letter-spacing:3px;font-weight:600">SIEMENS AUTOMATION</span>
+  <span class="dv">|</span>
+  <span id="readct">Reads: 0</span>
+  <span class="dv">|</span>
+  <span id="writect">Writes: 0</span>
+  <span class="dv">|</span>
+  <span id="ifrstatus" style="color:var(--muted)">API INIT...</span>
+</div>
+
+<script>
+// Node backend endpoints
+var API_POLL    = '/api/poll';
+var API_WRITE   = '/api/write';
+var API_CPUINFO = '/api/cpuinfo';
+
+var mode = 'live';
+var spminLocked = false, spmaxLocked = false, simLocked = false, systemRunLocked = false;
+var readCount = 0, writeCount = 0;
+var autoTimer = null, autoDir = 1;
+var alarmSilenced = false;      // sim-only latch
+var alarmSilencedLive = false;  // live-mode latch — toggled by SILENCE ALARM button
+var connected = false;
+var lastCpuMode = null;
+var plcIp = '--';   // populated dynamically from /api/cpuinfo on first response
+// Runtime — server-side stopwatch provides runtimeHours on every poll.
+// rtDisplaySec smoothly increments +1/s when pump is on, for a natural clock face.
+var rtResetLocked = false;
+var rtResetLockTimer = null;
+var rtDisplaySec = 0;
+
+// CONNECTION WATCHDOG ------------------------------------------------------
+// connState: 'connecting' | 'connected' | 'retrying' | 'disconnected'
+var connState = 'connecting';
+var lastGoodReadTs = null;
+var WATCHDOG_TIMEOUT_MS = 7000;   // no good read within this window -> retrying
+var WATCHDOG_LOST_MS    = 15000;  // no good read within this window -> disconnected
+
+// CPU MODEL FETCH (Start page iframe) --------------------------------------
+
+
+var state = {
+  tankLevel:0, spMin:30, spMax:70,
+  pumpOn:false, alarmHigh:false, alarmLow:false,
+  emStop:false, alarmReset:false, simLevel:0, systemRun:false,
+  runtimeHours:0
+};
+
+var TLEN = 60, hist = [];
+for(var hi=0;hi<TLEN;hi++) hist.push(0);
+
+// Lock timers --- auto-release after N ms of no interaction
+var spminLockTimer=null, spmaxLockTimer=null, simLockTimer=null, systemRunLockTimer=null;
+function lockSPMIN(){ spminLocked=true; clearTimeout(spminLockTimer); spminLockTimer=setTimeout(function(){ spminLocked=false; },3500); }
+function lockSPMAX(){ spmaxLocked=true; clearTimeout(spmaxLockTimer); spmaxLockTimer=setTimeout(function(){ spmaxLocked=false; },3500); }
+function lockSIM(){   simLocked=true;   clearTimeout(simLockTimer);   simLockTimer=setTimeout(function(){   simLocked=false;   },3500); }
+
+// ---------------------------------------------------------------------------
+// IFRAME SESSION — replaced by Node API (see fetchPoll / sendWrite below)
+// pollInFlight flag prevents overlapping fetch requests (same role as the
+// old pollPending / frameReloading guards on the iframe).
+// ---------------------------------------------------------------------------
+
+// Internal fallback runtime counter — ticks every 2s when pump is running
+// tickRuntime — live mode gets Runtime_Hours straight from the PLC every poll
+// (authoritative, fixed via the gated CALCULATE rung). This stub is kept so
+// simulation mode still accumulates locally.
+function tickRuntime(){
+  if(mode==='sim' && state.pumpOn && !rtResetLocked){
+    state.runtimeHours += 2/3600;
+  }
+}
+
+function syncSliders(){
+  if(!spminLocked){ document.getElementById('spminsl').value=state.spMin; document.getElementById('spminnum').value=state.spMin.toFixed(1); }
+  if(!spmaxLocked){ document.getElementById('spmaxsl').value=state.spMax; document.getElementById('spmaxnum').value=state.spMax.toFixed(1); }
+  if(!simLocked){   document.getElementById('simsl').value=state.simLevel; document.getElementById('simnum').value=state.simLevel.toFixed(1); }
+  syncBandInfo();
+}
+
+function syncBandInfo(){
+  var mn=parseFloat(document.getElementById('spminnum').value)||state.spMin;
+  var mx=parseFloat(document.getElementById('spmaxnum').value)||state.spMax;
+  var gap=mx-mn;
+  document.getElementById('bi_min').textContent=mn.toFixed(1);
+  document.getElementById('bi_max').textContent=mx.toFixed(1);
+  document.getElementById('bi_gap').textContent=gap>0?gap.toFixed(1):'ERR';
+}
+
+function updateReadCounts(){
+  document.getElementById('readct').textContent='Reads: '+readCount;
+  document.getElementById('readct2').textContent=readCount;
+}
+
+// WRITE ACTIONS
+var TAG={
+  spMin:'"DB_Tank".SP_Min',
+  spMax:'"DB_Tank".SP_Max',
+  simLevel:'"DB_Tank".Sim_Level',
+  emStop:'"DB_Tank".Em_Stop',
+  alarmReset:'"DB_Tank".Alarm_Reset',
+  runtimeReset:'"DB_Tank".Runtime_Reset',
+  manualStart:'"DB_Tank".Manual_Start',
+  manualStop:'"DB_Tank".Manual_Stop'
+};
+
+function writeBand(){
+  var mn=parseFloat(document.getElementById('spminnum').value);
+  var mx=parseFloat(document.getElementById('spmaxnum').value);
+  if(isNaN(mn)||isNaN(mx)){ addLog('err','Invalid band values'); return; }
+  if(mn>=mx){ addLog('err','SP_Min ('+mn+') must be < SP_Max ('+mx+')'); return; }
+  if(mode==='live'){
+    // Lock both sliders for full write duration:
+    // write1 fires at 0ms, iframe reloads at ~800ms, ready at ~1600ms
+    // write2 fires at 700ms, iframe reloads at ~1500ms, ready at ~2300ms
+    // Keep both locked for 5s to be safe
+    spminLocked=true; spmaxLocked=true;
+    clearTimeout(spminLockTimer); clearTimeout(spmaxLockTimer);
+    spminLockTimer=setTimeout(function(){ spminLocked=false; },5000);
+    spmaxLockTimer=setTimeout(function(){ spmaxLocked=false; },5000);
+    // Optimistically apply to tank band lines immediately (same instant feel as Sim Level)
+    // The slider locks above still protect the input fields from being overwritten
+    // by stale PLC readbacks until the write round-trip completes
+    state.spMin=mn; state.spMax=mx;
+    updateUI();
+    writePLC(TAG.spMin, mn.toFixed(1), 'SP_Min');
+    setTimeout(function(){ writePLC(TAG.spMax, mx.toFixed(1), 'SP_Max'); },700);
+  } else {
+    state.spMin=mn; state.spMax=mx;
+    spminLocked=false; spmaxLocked=false;
+    addLog('info','[SIM] SP_Min='+mn+' SP_Max='+mx);
+    updateUI();
+  }
+}
+
+function writeSIM(){
+  var v=parseFloat(document.getElementById('simnum').value);
+  if(isNaN(v)) return;
+  if(mode==='live'){
+    writePLC(TAG.simLevel, v.toFixed(1), 'Sim_Level');
+    state.tankLevel = v;   // optimistic update — poll will confirm on next cycle
+    updateUI();
+  }
+}
+
+function writeEstop(){
+  var nv=!state.emStop;
+  if(mode==='live'){
+    writePLC(TAG.emStop,nv?'true':'false','Em_Stop');
+    if(!nv){
+      setTimeout(function(){
+        if(alarmSilencedLive){
+          alarmSilencedLive = false;
+          addLog('ok','SILENCE ALARM released with E-Stop');
+          updateUI();
+        }
+        writePLC(TAG.alarmReset,'false','Alarm_Reset clear (E-Stop released)');
+      },700);
+    }
+  }
+  else {
+    state.emStop=nv;
+    if(nv){
+      state.systemRun=false; state.pumpOn=false; state.alarmHigh=true; state.alarmLow=true;
+      lockSystemRun();
+      if(autoTimer){ clearInterval(autoTimer); autoTimer=null; var ab=document.getElementById('autobtn'); if(ab) ab.textContent='AUTO FILL DEMO'; }
+    } else {
+      alarmSilenced=false;
+      alarmSilencedLive=false;
+    }
+    addLog(nv?'err':'ok','[SIM] E-Stop '+(nv?'ON':'OFF'));
+    updateUI();
+  }
+}
+
+function writeAlarmReset(){
+  if(mode==='live'){
+    alarmSilencedLive = !alarmSilencedLive;
+    if(alarmSilencedLive){
+      writePLC(TAG.alarmReset,'true','Alarm_Reset LATCHED — alarms silenced');
+      addLog('warn','SILENCE ALARM latched ON');
+    } else {
+      writePLC(TAG.alarmReset,'false','Alarm_Reset released — alarm monitoring restored');
+      addLog('ok','SILENCE ALARM released');
+    }
+    updateUI();
+  } else {
+    alarmSilenced = !alarmSilenced;
+    if(alarmSilenced){ state.alarmHigh=false; state.alarmLow=false; addLog('warn','[SIM] Alarms silenced'); }
+    else { addLog('ok','[SIM] Alarm silence released'); }
+    updateUI();
+  }
+}
+
+function writeRuntimeReset(){
+  var savedSystemRun=state.systemRun;
+  state.runtimeHours=0; rtDisplaySec=0;
+  rtResetLocked=true;
+  clearTimeout(rtResetLockTimer);
+  rtResetLockTimer=setTimeout(function(){ rtResetLocked=false; },3500);
+  state.systemRun=savedSystemRun;
+  lockSystemRun();
+  updateUI();
+  if(mode==='live'){
+    // Reset PLC tag
+    writePLC(TAG.runtimeReset,'true','Runtime_Reset SET');
+    setTimeout(function(){ writePLC(TAG.runtimeReset,'false','Runtime_Reset RESET'); addLog('ok','Runtime reset done'); },700);
+  } else { addLog('ok','[SIM] Runtime cleared'); }
+}
+
+function lockSystemRun(){ systemRunLocked=true; clearTimeout(systemRunLockTimer); systemRunLockTimer=setTimeout(function(){ systemRunLocked=false; },3000); }
+
+function writeStart(){
+  if(state.emStop){ addLog('warn','Cannot START — release E-Stop first'); return; }
+  if(state.systemRun){ addLog('warn','System already running'); return; }
+  state.systemRun=true; lockSystemRun(); updateUI();
+  if(mode==='live'){
+    writePLC(TAG.manualStart,'true','Manual_Start SET');
+    setTimeout(function(){ writePLC(TAG.manualStart,'false','Manual_Start RESET'); addLog('ok','System START issued'); },700);
+  } else { addLog('ok','[SIM] System START'); }
+}
+
+function writeStop(){
+  if(state.emStop){ addLog('warn','Cannot toggle STOP — E-Stop is already active'); return; }
+  if(!state.systemRun){ addLog('warn','System already stopped'); return; }
+  state.systemRun=false; state.pumpOn=false; lockSystemRun(); updateUI();
+  if(autoTimer){ clearInterval(autoTimer); autoTimer=null; var ab=document.getElementById('autobtn'); if(ab) ab.textContent='AUTO FILL DEMO'; }
+  if(mode==='live'){
+    writePLC(TAG.manualStop,'true','Manual_Stop SET');
+    setTimeout(function(){ writePLC(TAG.manualStop,'false','Manual_Stop RESET'); addLog('warn','System STOP issued'); },700);
+  } else { addLog('warn','[SIM] System STOP'); }
+}
+
+// SIMULATION
+function runSim(){
+  state.tankLevel=state.simLevel;
+  if(alarmSilenced){
+    state.alarmHigh=false; state.alarmLow=false;
+  } else {
+    if(state.tankLevel>=90) state.alarmHigh=true;
+    else if(state.tankLevel<85) state.alarmHigh=false;
+    if(state.tankLevel<=10) state.alarmLow=true;
+    else if(state.tankLevel>10) state.alarmLow=false;
+    // Em_Stop latches BOTH alarms — re-asserted every tick for as long as
+    // Em_Stop stays active, overriding the level comparison above (mirrors
+    // the PLC's Network 7 running after Networks 2/3 each scan)
+    if(state.emStop){ state.alarmHigh=true; state.alarmLow=true; }
+  }
+  if(state.emStop||!state.systemRun){ state.pumpOn=false; }
+  else {
+    if(state.tankLevel<state.spMin) state.pumpOn=true;
+    if(state.tankLevel>=state.spMax) state.pumpOn=false;
+  }
+  if(state.pumpOn){ state.runtimeHours+=2/3600; }
+}
+
+function updateDemo(v){
+  state.simLevel=parseFloat(v);
+  document.getElementById('demosl').value=v;
+  document.getElementById('demonum').value=parseFloat(v).toFixed(1);
+}
+
+function autoFill(){
+  if(autoTimer){ clearInterval(autoTimer); autoTimer=null; document.getElementById('autobtn').textContent='AUTO FILL DEMO'; return; }
+  document.getElementById('autobtn').textContent='STOP DEMO';
+  autoTimer=setInterval(function(){
+    state.simLevel=Math.max(0,Math.min(100,state.simLevel+autoDir*0.8));
+    if(state.simLevel>=95) autoDir=-1;
+    if(state.simLevel<=2) autoDir=1;
+    document.getElementById('demosl').value=state.simLevel;
+    document.getElementById('demonum').value=state.simLevel.toFixed(1);
+  },100);
+}
+
+// MODE
+function setMode(m){
+  if(autoTimer){ clearInterval(autoTimer); autoTimer=null; var ab=document.getElementById('autobtn'); if(ab) ab.textContent='AUTO FILL DEMO'; }
+  mode=m;
+  // Reset run state on mode switch — operator must press START explicitly
+  state.systemRun=false; state.pumpOn=false; lockSystemRun();
+  document.getElementById('mlive').classList.toggle('act',m==='live');
+  document.getElementById('msim').classList.toggle('act',m==='sim');
+  document.getElementById('simlvlpanel').style.display=m==='live'?'block':'none';
+  document.getElementById('demopanel').style.display=m==='sim'?'block':'none';
+  document.getElementById('minfo').textContent=m==='live'?'Reading from '+plcIp:'Simulation mode';
+  document.getElementById('hdrmode').textContent=m==='live'?'LIVE PLC':'SIMULATE';
+  document.getElementById('connblock').style.display=m==='live'?'':'none';
+  document.getElementById('conndv').style.display=m==='live'?'':'none';
+  addLog('info','Mode: '+m.toUpperCase());
+  alarmSilenced = false;
+  alarmSilencedLive = false;
+  document.body.classList.toggle('mode-live',m==='live');
+  document.body.classList.toggle('mode-sim',m==='sim');
+  window.scrollTo(0,0);
+}
+
+// CONNECTION STATE -----------------------------------------------------
+// Called on every read attempt. ok=true on a successful, parsed read.
+// Drives connState through: connecting -> connected -> retrying -> disconnected
+// and automatically back to connected once reads succeed again.
+function setConn(ok){
+  connected=ok;
+  if(ok){
+    lastGoodReadTs=Date.now();
+    if(connState!=='connected'){
+      connState='connected';
+      addLog('ok','PLC connection established');
+    }
+  }
+  renderConnState();
+}
+
+function renderConnState(){
+  var dot=document.getElementById('cdot');
+  var txt=document.getElementById('ctxt');
+  switch(connState){
+    case 'connecting':
+      dot.className='dot try';
+      txt.textContent='CONNECTING...';
+      break;
+    case 'connected':
+      dot.className='dot on';
+      txt.textContent='CONNECTED @ '+plcIp;
+      break;
+    case 'retrying':
+      dot.className='dot try';
+      txt.textContent='RETRYING CONNECTION...';
+      break;
+    case 'disconnected':
+      dot.className='dot off';
+      txt.textContent='CONNECTION LOST';
+      break;
+  }
+}
+
+// Watchdog: periodically checks how long it has been since the last
+// successful read and escalates the connection state accordingly.
+// Recovery is automatic --- the next successful setConn(true) call
+// (from fetchPoll) flips state back to 'connected'.
+function watchdogTick(){
+  if(mode!=='live') return; // connection status only meaningful in live mode
+  if(lastGoodReadTs===null){
+    if(connState!=='connecting') connState='connecting';
+    renderConnState();
+    return;
+  }
+  var age=Date.now()-lastGoodReadTs;
+  if(age>=WATCHDOG_LOST_MS){
+    if(connState!=='disconnected'){ connState='disconnected'; addLog('err','PLC connection lost - retrying...'); }
+  } else if(age>=WATCHDOG_TIMEOUT_MS){
+    if(connState!=='retrying'&&connState!=='disconnected'){ connState='retrying'; }
+  }
+  renderConnState();
+}
+
+// RUNTIME FORMATTER: decimal hours -> Xh MM:SS
+function fmtRuntime(h){
+  var t=Math.round(h*3600);
+  var hr=Math.floor(t/3600);
+  var mn=Math.floor((t%3600)/60);
+  var sc=t%60;
+  return hr+'h '+(mn<10?'0':'')+mn+':'+(sc<10?'0':'')+sc;
+}
+
+function setSC(id,text,colorClass,borderClass){
+  var el=document.getElementById(id);
+  var key=id.replace('p','');
+  var sc=document.getElementById('sc_'+key);
+  if(!el||!sc) return;
+  var prev=el.textContent;
+  el.innerHTML=text;
+  el.className='sv '+colorClass;
+  sc.className='sc '+(borderClass||'');
+  if(prev!==text && id!=='pruntime'){ sc.classList.add('pop'); setTimeout(function(){ sc.classList.remove('pop'); },300); }
+}
+
+function updateUI(){
+  var lv=state.tankLevel;
+  document.getElementById('tfill').style.height=lv+'%';
+  document.getElementById('lvlval').textContent=lv.toFixed(1);
+  document.getElementById('spmaxline').style.bottom=state.spMax+'%';
+  document.getElementById('spminline').style.bottom=state.spMin+'%';
+
+  var f=document.getElementById('tfill');
+  if(state.alarmHigh){
+    f.style.background='linear-gradient(180deg,rgba(255,59,59,0.3),rgba(180,20,20,0.5))';
+    f.style.borderTopColor='var(--red)';
+  } else if(state.alarmLow){
+    f.style.background='linear-gradient(180deg,rgba(255,170,0,0.3),rgba(160,100,0,0.5))';
+    f.style.borderTopColor='var(--amber)';
+  } else {
+    f.style.background='linear-gradient(180deg,rgba(0,170,255,0.25),rgba(0,102,204,0.5))';
+    f.style.borderTopColor='var(--accent)';
+  }
+
+  // Initialize the displayed runtime seconds on first run; afterwards it is
+  // smoothly stepped by the 1s interval below and just rendered here.
+  setSC('ppump',state.pumpOn?'RUNNING':'STOPPED',state.pumpOn?'green':'dim',state.pumpOn?'active-green':'');
+  setSC('pruntime',rtDisplaySec<1&&!state.pumpOn?'--':fmtRuntime(rtDisplaySec/3600),state.pumpOn?'green':'cyan',state.pumpOn?'active-green':'');
+  setSC('psim',state.tankLevel.toFixed(1)+' %','cyan','');
+  setSC('pah',state.alarmHigh?'ALARM':'OK',state.alarmHigh?'red':'dim',state.alarmHigh?'active-red':'');
+  setSC('pal',state.alarmLow?'WARN':'OK',state.alarmLow?'amber':'dim',state.alarmLow?'active-amber':'');
+  setSC('pes',state.emStop?'ACTIVE':'CLEAR',state.emStop?'red':'dim',state.emStop?'active-red':'');
+
+  var ebtn=document.getElementById('estopbtn');
+  ebtn.classList.toggle('act',state.emStop);
+  ebtn.textContent=state.emStop?'!! E-STOP ACTIVE - CLICK TO RELEASE':'EMERGENCY STOP';
+  var silbtn=document.getElementById('silencebtn');
+  if(mode==='live' && state.alarmReset !== undefined) alarmSilencedLive = state.alarmReset;
+  var silActive = mode==='live' ? alarmSilencedLive : alarmSilenced;
+  silbtn.classList.toggle('act',silActive);
+  silbtn.textContent=silActive?'!! SILENCE ACTIVE - CLICK TO RELEASE':'SILENCE ALARM';
+  var sbtn=document.getElementById('startbtn');
+  var xbtn=document.getElementById('stopbtn');
+  if(sbtn) sbtn.classList.toggle('dim',state.systemRun||state.emStop);
+  if(xbtn) xbtn.classList.toggle('dim',(!state.systemRun)||state.emStop);
+
+  document.getElementById('inf_spmin').textContent=state.spMin.toFixed(1)+' %';
+  document.getElementById('inf_spmax').textContent=state.spMax.toFixed(1)+' %';
+  document.getElementById('inf_sim').textContent=state.simLevel.toFixed(1)+' %';
+  var rtText=rtDisplaySec===0&&!state.pumpOn?'--':fmtRuntime(rtDisplaySec/3600);
+  document.getElementById('inf_rt').textContent=rtText;
+  syncBandInfo();
+  hist.push(lv); hist.shift();
+  drawTrend();
+}
+
+// TREND — cached canvas dimensions to avoid reflow every 2s
+var trendW=0, trendH=0;
+function cacheTrendSize(){
+  var cv=document.getElementById('trend');
+  trendW=cv.offsetWidth; trendH=cv.offsetHeight;
+  cv.width=trendW*window.devicePixelRatio;
+  cv.height=trendH*window.devicePixelRatio;
+}
+window.addEventListener('resize',cacheTrendSize);
+
+// LOG BODY AUTO-FIT — measures actual remaining space above the footer and
+// sizes the scroll box to match exactly, instead of a guessed px constant.
+function fitLogBody(){
+  var lb = document.getElementById('logentries');
+  var ft = document.querySelector('.ft');
+  if(!lb || !ft) return;
+  var available = ft.getBoundingClientRect().top - lb.getBoundingClientRect().top - 8;
+  lb.style.maxHeight = Math.max(80, available) + 'px';
+}
+window.addEventListener('load', fitLogBody);
+window.addEventListener('resize', fitLogBody);
+
+function drawTrend(){
+  var cv=document.getElementById('trend');
+  var ctx=cv.getContext('2d');
+  // Only resize the backing store when dimensions actually changed
+  var cw=cv.offsetWidth, ch=cv.offsetHeight;
+  if(cw!==trendW||ch!==trendH){ trendW=cw; trendH=ch; cv.width=cw*window.devicePixelRatio; cv.height=ch*window.devicePixelRatio; }
+  ctx.setTransform(window.devicePixelRatio,0,0,window.devicePixelRatio,0,0);
+  var w=trendW, h=trendH;
+  ctx.clearRect(0,0,w,h);
+  // Grid lines — font set once outside loop
+  ctx.font='11px Share Tech Mono';
+  var gv=[25,50,75];
+  for(var gi=0;gi<gv.length;gi++){
+    var gy=h-(gv[gi]/100)*h;
+    ctx.strokeStyle='#1e2d3d'; ctx.lineWidth=0.5;
+    ctx.beginPath(); ctx.moveTo(0,gy); ctx.lineTo(w,gy); ctx.stroke();
+    ctx.fillStyle='#8ab0c8';
+    ctx.fillText(gv[gi]+'%',3,gy-3);
+  }
+  var smxy=h-(state.spMax/100)*h;
+  ctx.strokeStyle='rgba(0,212,255,0.6)'; ctx.lineWidth=1; ctx.setLineDash([4,4]);
+  ctx.beginPath(); ctx.moveTo(0,smxy); ctx.lineTo(w,smxy); ctx.stroke();
+  ctx.fillStyle='rgba(0,212,255,0.9)';
+  ctx.fillText('MAX '+state.spMax+'%',w-72,smxy-3);
+  var smny=h-(state.spMin/100)*h;
+  ctx.strokeStyle='rgba(255,170,0,0.6)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(0,smny); ctx.lineTo(w,smny); ctx.stroke();
+  ctx.fillStyle='rgba(255,170,0,0.9)';
+  ctx.fillText('MIN '+state.spMin+'%',w-72,smny-3);
+  ctx.setLineDash([]);
+  ctx.fillStyle='rgba(0,212,255,0.04)';
+  ctx.fillRect(0,smxy,w,smny-smxy);
+  ctx.strokeStyle='#00d4ff'; ctx.lineWidth=1.5; ctx.beginPath();
+  for(var ji=0;ji<hist.length;ji++){
+    var jx=(ji/(TLEN-1))*w; var jy=h-(hist[ji]/100)*h;
+    if(ji===0) ctx.moveTo(jx,jy); else ctx.lineTo(jx,jy);
+  }
+  ctx.stroke();
+  ctx.lineTo(w,h); ctx.lineTo(0,h);
+  ctx.fillStyle='rgba(0,212,255,0.06)'; ctx.fill();
+}
+
+// LOG — circular buffer: store in memory, render only visible entries
+var LOG_MAX=50;
+var logBuffer=[];  // [{type,msg,time,separator?}]
+var lastLogDate='';
+function addLog(type,msg){
+  var now=new Date();
+  var dateStr=now.toLocaleDateString(undefined,{month:'short',day:'numeric'});
+  var timeStr=now.toTimeString().slice(0,8);
+  if(dateStr!==lastLogDate){
+    lastLogDate=dateStr;
+    logBuffer.unshift({separator:true,msg:'─── '+dateStr+' ───'});
+  }
+  logBuffer.unshift({type:type,msg:msg,time:timeStr});
+  if(logBuffer.length>LOG_MAX) logBuffer.length=LOG_MAX;
+  renderLog();
+}
+function renderLog(){
+  var c=document.getElementById('logentries');
+  var visible=Math.min(logBuffer.length,20);
+  var html='';
+  for(var li=0;li<visible;li++){
+    var en=logBuffer[li];
+    if(en.separator){
+      html+='<div style="font-family:var(--mono);font-size:11px;color:var(--muted);padding:3px 0;text-align:center;border-bottom:1px solid var(--border)">'+en.msg+'</div>';
+    } else {
+      html+='<div class="le"><span class="lt">'+en.time+'</span><span class="lm '+en.type+'">'+en.msg+'</span></div>';
+    }
+  }
+  c.innerHTML=html;
+}
+
+// ---------------------------------------------------------------------------
+// API STATUS (footer indicator — mirrors old iframe session status display)
+// ---------------------------------------------------------------------------
+function setIfrStatus(msg, color){
+  var el = document.getElementById('ifrstatus');
+  el.textContent = msg;
+  el.style.color  = color || 'var(--muted)';
+}
+
+// ---------------------------------------------------------------------------
+// POLL — replaces readAWP + readFromFrame + parsePollResult
+// A single fetch('/api/poll') that the Node backend performs the cheerio
+// scraping on, returning clean JSON. No iframe, no DOM manipulation.
+// ---------------------------------------------------------------------------
+var pollInFlight = false;
+function fetchPoll(){
+  if(pollInFlight) return;
+  pollInFlight = true;
+  setIfrStatus('FETCHING...','var(--muted)');
+  fetch(API_POLL)
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      pollInFlight = false;
+      if(!data.ok){
+        if(readCount <= 3 && data.sample) addLog('warn','Watch table sample: '+data.sample);
+        setConn(false);
+        setIfrStatus('NO DATA','var(--amber)');
+        return;
+      }
+      if(data.tankLevel    !== null)                  state.tankLevel    = data.tankLevel;
+      if(data.spMin        !== null && !spminLocked)  state.spMin        = data.spMin;
+      if(data.spMax        !== null && !spmaxLocked)  state.spMax        = data.spMax;
+      if(data.pumpOn       !== null)                  state.pumpOn       = data.pumpOn;
+      if(data.alarmHigh    !== null)                  state.alarmHigh    = data.alarmHigh;
+      if(data.alarmLow     !== null)                  state.alarmLow     = data.alarmLow;
+      if(data.emStop       !== null)                  state.emStop       = data.emStop;
+      if(data.alarmReset   !== null)                  state.alarmReset   = data.alarmReset;
+      if(data.simLevel     !== null && !simLocked)    state.simLevel     = data.simLevel;
+      if(data.systemRun    !== null && !systemRunLocked) state.systemRun = data.systemRun;
+      // runtimeHours from PLC DB_Runtime.Runtime_Hours — authoritative
+      if(data.runtimeHours !== null && !rtResetLocked){
+        state.runtimeHours = data.runtimeHours;
+      }
+      syncSliders();
+      setConn(true);
+      readCount++; updateReadCounts();
+      document.getElementById('pupd').textContent = new Date().toTimeString().slice(0,8);
+      if(readCount === 2) addLog('info','Node API poll active');
+      setIfrStatus('API READY','var(--green)');
+      updateUI();
+    })
+    .catch(function(e){
+      pollInFlight = false;
+      setConn(false);
+      setIfrStatus('API ERROR','var(--red)');
+      addLog('err','Poll error: '+e.message);
+    });
+}
+
+// ---------------------------------------------------------------------------
+// WRITE — replaces doFrameWrite + writePLC (iframe DOM manipulation removed)
+// POSTs { tag, value } to Node which handles the Siemens form submission.
+// ---------------------------------------------------------------------------
+function sendWrite(tagKey, value, label){
+  setIfrStatus('WRITING...','var(--muted)');
+  fetch(API_WRITE, {
+    method:  'POST',
+    headers: {'Content-Type':'application/json'},
+    body:    JSON.stringify({tag: tagKey, value: String(value)})
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(data){
+    if(data.ok){
+      writeCount++;
+      document.getElementById('writect').textContent = 'Writes: '+writeCount;
+      addLog('ok',(label||tagKey)+' = '+value);
+      setIfrStatus('WRITE OK','var(--green)');
+    } else {
+      addLog('err','Write failed: '+(data.error||tagKey));
+      setIfrStatus('WRITE ERR','var(--red)');
+    }
+  })
+  .catch(function(e){
+    addLog('err','Write error: '+e.message);
+    setIfrStatus('WRITE ERR','var(--red)');
+  });
+}
+
+function writePLC(tagKey, value, label){
+  if(mode !== 'live') return;
+  sendWrite(tagKey, value, label);
+}
+
+function readPLC(){
+  if(mode !== 'live') return;
+  fetchPoll();
+}
+// ---------------------------------------------------------------------------
+// CPU INFO — polls /api/cpuinfo for module model + operating mode (RUN/STOP).
+// Low frequency since this rarely changes. On a RUN -> STOP transition,
+// zeroes the *displayed* runtime locally only (the PLC isn't executing OB1
+// in STOP, so no Runtime_Reset write is issued) - it resyncs to the real
+// PLC value once back in RUN and polling resumes.
+// ---------------------------------------------------------------------------
+function fetchCpuInfo(){
+  fetch(API_CPUINFO)
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      if(!data.ok) return;
+      if(data.ip && data.ip !== plcIp){
+        plcIp = data.ip;
+        document.getElementById('minfo').textContent = mode==='live' ? 'Reading from '+plcIp : 'Simulation mode';
+      }
+      var modelTxt = data.model ? data.model.replace(/^CPU\s*/i,'') : '--';
+      document.getElementById('cpumodel').textContent = 'S7-1500 | CPU '+modelTxt+(data.mode?' ['+data.mode+']':'');
+      document.getElementById('cpudot').className = 'dot ' + (data.mode==='RUN' ? 'on' : data.mode==='STOP' ? 'off' : 'try');
+      if(lastCpuMode==='RUN' && data.mode==='STOP'){
+        addLog('warn','CPU entered STOP mode');
+        state.runtimeHours=0; rtDisplaySec=0; updateUI();
+      }
+      if(lastCpuMode==='STOP' && data.mode==='RUN'){
+        addLog('ok','CPU entered RUN mode');
+      }
+      lastCpuMode = data.mode;
+    })
+    .catch(function(){ /* transient miss - keep last known header value */ });
+}
+
+// MAIN LOOP
+var tickInterval = null, clockInterval = null;
+
+function startIntervals(){
+  if(tickInterval) return;
+  tickInterval=setInterval(tick,500);
+  clockInterval=setInterval(function(){
+    document.getElementById('clk').textContent=new Date().toTimeString().slice(0,8);
+    watchdogTick();
+    var target=Math.round(state.runtimeHours*3600);
+    if(state.pumpOn && !rtResetLocked){
+      if(target-rtDisplaySec>2) rtDisplaySec=target;
+      else rtDisplaySec+=1;
+    } else {
+      rtDisplaySec=target;
+    }
+    var rtText=rtDisplaySec<1&&!state.pumpOn?'--':fmtRuntime(rtDisplaySec/3600);
+    document.getElementById('pruntime').textContent=rtText;
+    document.getElementById('inf_rt').textContent=rtText;
+  },1000);
+}
+
+function stopIntervals(){
+  if(tickInterval){ clearInterval(tickInterval); tickInterval=null; }
+  if(clockInterval){ clearInterval(clockInterval); clockInterval=null; }
+}
+
+// Pause polling when tab is hidden, resume when visible — keeps memory flat on long shifts
+document.addEventListener('visibilitychange',function(){
+  if(document.hidden){ stopIntervals(); }
+  else { startIntervals(); drawTrend(); }
+});
+
+function tick(){
+  if(mode==='live'){ tickRuntime(); readPLC(); }
+  else { runSim(); updateUI(); }
+}
+
+document.getElementById('clk').textContent=new Date().toTimeString().slice(0,8);
+cacheTrendSize();
+setMode('live');
+syncBandInfo();
+addLog('info','Tank Level Control — Node API ready');
+readPLC();
+startIntervals();
+fetchCpuInfo();
+setInterval(fetchCpuInfo, 10000);
+</script>
+</body>
+</html>
