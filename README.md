@@ -101,3 +101,7 @@ Then open **http://localhost:3000** in your browser.
 - The Emergency Stop in this project is a software bit written over HTTP. It is a demonstration function and **not a safety function**. A real machine needs a hardwired E-stop.
 - The API has no authentication or input validation. Run it on a trusted network only.
 - Developed and tested against a simulated process (`Sim_Level`); it is not a production SCADA system.
+
+## 📜 License
+
+This project is licensed under the [MIT License](LICENSE).
